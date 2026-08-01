@@ -1,7 +1,7 @@
 /**
  * 화동옥션 검색용 한글 ↔ 한자 변환
  * - 최장일치 사전 치환
- * - 숫자+원 → 數字+圓
+ * - 숫자+원/환 → 數字+圓/圜 (천 단위 쉼표 제거)
  * - 짧은 한 글자는 경매 제목에서 자주 쓰는 뜻을 우선
  */
 (function (global) {
@@ -347,13 +347,24 @@
     return { text: out, changed };
   }
 
-  function convertNumberWon(text) {
-    const next = text.replace(/(\d+)\s*원/g, "$1圓");
+  function stripThousandCommas(text) {
+    return String(text).replace(/\d{1,3}(?:,\d{3})+/g, (m) => m.replace(/,/g, ""));
+  }
+
+  /** 숫자+원/환 → 쉼표 없는 數字+圓/圜 */
+  function convertNumberCurrency(text) {
+    let next = String(text);
+    next = next.replace(/(\d[\d,]*)\s*원/g, (_, n) => stripThousandCommas(n) + "圓");
+    next = next.replace(/(\d[\d,]*)\s*환/g, (_, n) => stripThousandCommas(n) + "圜");
+    next = next.replace(/(\d[\d,]*)\s*圓/g, (_, n) => stripThousandCommas(n) + "圓");
+    next = next.replace(/(\d[\d,]*)\s*圜/g, (_, n) => stripThousandCommas(n) + "圜");
     return { text: next, changed: next !== text };
   }
 
-  function convertNumberWonReverse(text) {
-    const next = text.replace(/(\d+)\s*圓/g, "$1원");
+  function convertNumberCurrencyReverse(text) {
+    let next = String(text);
+    next = next.replace(/(\d[\d,]*)\s*圓/g, (_, n) => stripThousandCommas(n) + "원");
+    next = next.replace(/(\d[\d,]*)\s*圜/g, (_, n) => stripThousandCommas(n) + "환");
     return { text: next, changed: next !== text };
   }
 
@@ -370,38 +381,59 @@
     const out = [];
     addUnique(out, raw);
 
-    if (HAS_HANGUL.test(raw)) {
-      const a = replaceByDict(raw, HANGUL_TO_HANJA);
-      if (a.changed) addUnique(out, a.text);
+    const noComma = stripThousandCommas(raw);
 
-      const b = convertNumberWon(raw);
-      if (b.changed) addUnique(out, b.text);
+    // 금액형은 쉼표 없는 한자 표기를 최우선 후보로
+    const preferredCurrency = convertNumberCurrency(noComma);
+    if (preferredCurrency.changed) addUnique(out, preferredCurrency.text);
 
-      const c = convertNumberWon(a.text);
-      if (c.changed) addUnique(out, c.text);
+    if (noComma !== raw) addUnique(out, noComma);
 
-      Object.keys(HANGUL_MULTI).forEach((ko) => {
-        if (!raw.includes(ko)) return;
-        // 한 글자 동의어는 검색어 전체가 그 글자일 때만 적용
-        if (ko.length === 1 && raw !== ko) return;
-        // 원문 전체가 사전 단어면 해당 단어 멀티만 적용 (부분 치환 노이즈 방지)
-        if (HANGUL_TO_HANJA[raw] && ko !== raw) return;
-        HANGUL_MULTI[ko].forEach((hj) => {
-          addUnique(out, raw.split(ko).join(hj));
+    const seeds = [raw];
+    if (noComma !== raw) seeds.push(noComma);
+
+    seeds.forEach((seed) => {
+      if (HAS_HANGUL.test(seed)) {
+        const a = replaceByDict(seed, HANGUL_TO_HANJA);
+        if (a.changed) {
+          addUnique(out, stripThousandCommas(a.text));
+          addUnique(out, a.text);
+        }
+
+        const b = convertNumberCurrency(seed);
+        if (b.changed) addUnique(out, b.text);
+
+        const c = convertNumberCurrency(a.text);
+        if (c.changed) addUnique(out, c.text);
+
+        Object.keys(HANGUL_MULTI).forEach((ko) => {
+          if (!seed.includes(ko)) return;
+          // 한 글자 동의어는 검색어 전체가 그 글자일 때만 적용
+          if (ko.length === 1 && seed !== ko) return;
+          // 원문 전체가 사전 단어면 해당 단어 멀티만 적용 (부분 치환 노이즈 방지)
+          if (HANGUL_TO_HANJA[seed] && ko !== seed) return;
+          HANGUL_MULTI[ko].forEach((hj) => {
+            const joined = seed.split(ko).join(hj);
+            addUnique(out, stripThousandCommas(joined));
+            addUnique(out, joined);
+          });
         });
-      });
-    }
+      }
 
-    if (HAS_HANJA.test(raw)) {
-      const a = replaceByDict(raw, HANJA_TO_HANGUL);
-      if (a.changed) addUnique(out, a.text);
+      if (HAS_HANJA.test(seed)) {
+        const a = replaceByDict(seed, HANJA_TO_HANGUL);
+        if (a.changed) addUnique(out, a.text);
 
-      const b = convertNumberWonReverse(raw);
-      if (b.changed) addUnique(out, b.text);
+        const b = convertNumberCurrencyReverse(seed);
+        if (b.changed) addUnique(out, b.text);
 
-      const c = convertNumberWonReverse(a.text);
-      if (c.changed) addUnique(out, c.text);
-    }
+        const c = convertNumberCurrencyReverse(a.text);
+        if (c.changed) addUnique(out, c.text);
+
+        const d = convertNumberCurrency(seed);
+        if (d.changed) addUnique(out, d.text);
+      }
+    });
 
     return out;
   }
