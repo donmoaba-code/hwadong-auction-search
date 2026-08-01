@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>화동경매 검색툴 V26.08.03</title>
+  <title>화동경매 검색툴 V26.08.04</title>
   <style>
     :root {
       --bg: #f3efe8;
@@ -246,7 +246,7 @@
 </head>
 <body>
   <main class="card">
-    <h1>화동경매 검색툴 V26.08.03</h1>
+    <h1>화동경매 검색툴 V26.08.04</h1>
     <p class="desc" id="desc">
       실제 화동 상품명 목록으로 검색어를 고른 뒤
       <a href="https://www.hwadongauction.com/search/search" target="_blank" rel="noopener">화동옥션</a>
@@ -562,6 +562,17 @@
     }
 
     function pickBest(raw) {
+      // 목록에서 고른 제목(정확 일치)은 그대로 검색
+      if (useCatalog.checked && catalogReady && titles.includes(raw)) {
+        const hits = countInCatalog(raw);
+        return {
+          keyword: raw,
+          hits: hits || 1,
+          ranked: [{ keyword: raw, hits: hits || 1, isRaw: true }],
+          reason: `선택한 상품명 · "${raw}"`,
+        };
+      }
+
       const tokens = tokenize(raw);
       if (useCatalog.checked && catalogReady && tokens.length >= 2) {
         const cover = pickCoveringKeyword(tokens, 400);
@@ -676,21 +687,23 @@
       if (suggestIndex >= matches.length) suggestIndex = matches.length - 1;
       suggestEl.innerHTML = matches
         .map((title, i) => {
-          const key = extractKeyFromTitle(title, query);
-          return `<button type="button" role="option" data-i="${i}" class="${i === suggestIndex ? "active" : ""}">${escapeHtml(title)}<span class="meta">검색어 후보: ${escapeHtml(key)}</span></button>`;
+          return `<button type="button" role="option" data-i="${i}" class="${i === suggestIndex ? "active" : ""}">${escapeHtml(title)}<span class="meta">이 제목으로 검색</span></button>`;
         })
         .join("");
       suggestEl.classList.add("open");
     }
 
-    function applySuggest(i) {
+    function applySuggest(i, doSearch) {
       const title = suggestItems[i];
       if (!title) return;
-      const key = extractKeyFromTitle(title, getRawKeyword() || title);
-      keywordInput.value = key;
+      keywordInput.value = title;
       closeSuggest();
       renderPreview();
-      keywordInput.focus();
+      if (doSearch) {
+        openSearch();
+      } else {
+        keywordInput.focus();
+      }
     }
 
     function renderPreview() {
@@ -861,7 +874,8 @@
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       if (suggestEl.classList.contains("open") && suggestIndex >= 0) {
-        applySuggest(suggestIndex);
+        applySuggest(suggestIndex, true);
+        return;
       }
       openSearch();
     });
@@ -886,7 +900,7 @@
       const btn = e.target.closest("button[data-i]");
       if (!btn) return;
       e.preventDefault();
-      applySuggest(Number(btn.getAttribute("data-i")));
+      applySuggest(Number(btn.getAttribute("data-i")), true);
     });
 
     chips.addEventListener("click", (e) => {
