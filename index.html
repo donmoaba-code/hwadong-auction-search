@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>화동경매 검색툴 V26.08.02</title>
+  <title>화동경매 검색툴 V26.08.03</title>
   <style>
     :root {
       --bg: #f3efe8;
@@ -246,7 +246,7 @@
 </head>
 <body>
   <main class="card">
-    <h1>화동경매 검색툴 V26.08.02</h1>
+    <h1>화동경매 검색툴 V26.08.03</h1>
     <p class="desc" id="desc">
       실제 화동 상품명 목록으로 검색어를 고른 뒤
       <a href="https://www.hwadongauction.com/search/search" target="_blank" rel="noopener">화동옥션</a>
@@ -301,7 +301,8 @@
     </div>
 
     <p class="hint" id="hint">
-      목록에 더 많이 나오는 표기(예: <code>支給於音</code>, <code>1,000환</code>)를 골라 원본 창 <b>1개</b>만 엽니다.
+      목록에 더 많이 나오는 표기를 고르고, 띄어쓴 검색어는 AND로 찾아
+      제목 안의 연속 구간(예: <code>500원 백동화 - 1982年</code>)으로 원본 창 <b>1개</b>를 엽니다.
     </p>
     <p class="status" id="catalogStatus">상품명 목록 불러오는 중…</p>
 
@@ -378,6 +379,135 @@
       return n;
     }
 
+    function tokenize(query) {
+      return String(query || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+    }
+
+    function tokenVariants(token) {
+      const out = [];
+      const add = (v) => {
+        const s = String(v || "").trim();
+        if (s && !out.includes(s)) out.push(s);
+      };
+      add(token);
+      if (/^\d{4}$/.test(token)) {
+        add(token + "年");
+        add(token + "년");
+      }
+      if (dualHanja.checked && window.HwadongHanja) {
+        HwadongHanja.expandSearchKeywords(token).forEach(add);
+      }
+      return out;
+    }
+
+    function titleHasToken(title, token) {
+      const vars = tokenVariants(token);
+      for (let i = 0; i < vars.length; i++) {
+        if (title.includes(vars[i])) return true;
+      }
+      return false;
+    }
+
+    function titleHasAllTokens(title, tokens) {
+      for (let i = 0; i < tokens.length; i++) {
+        if (!titleHasToken(title, tokens[i])) return false;
+      }
+      return true;
+    }
+
+    function countAndMatches(tokens) {
+      if (!catalogReady || !tokens.length) return 0;
+      let n = 0;
+      for (let i = 0; i < titles.length; i++) {
+        if (titleHasAllTokens(titles[i], tokens)) n++;
+      }
+      return n;
+    }
+
+    function findAndTitles(tokens, limit) {
+      if (!catalogReady || !tokens.length) return [];
+      const out = [];
+      for (let i = 0; i < titles.length; i++) {
+        const t = titles[i];
+        if (!titleHasAllTokens(t, tokens)) continue;
+        out.push(t);
+        if (limit && out.length >= limit) break;
+      }
+      return out;
+    }
+
+    /** 제목에서 모든 토큰을 포함하는 가장 짧은 연속 구간 */
+    function shortestCoveringSpan(title, tokens) {
+      const hits = [];
+      tokens.forEach((token, ti) => {
+        tokenVariants(token).forEach((v) => {
+          let from = 0;
+          for (;;) {
+            const idx = title.indexOf(v, from);
+            if (idx < 0) break;
+            hits.push({ start: idx, end: idx + v.length, ti });
+            from = idx + 1;
+          }
+        });
+      });
+      const need = tokens.length;
+      const present = new Set(hits.map((h) => h.ti));
+      if (present.size < need) return null;
+      hits.sort((a, b) => a.start - b.start || a.end - b.end);
+
+      let best = null;
+      for (let i = 0; i < hits.length; i++) {
+        const count = Object.create(null);
+        let got = 0;
+        let end = 0;
+        for (let j = i; j < hits.length; j++) {
+          const h = hits[j];
+          count[h.ti] = (count[h.ti] || 0) + 1;
+          if (count[h.ti] === 1) got += 1;
+          end = Math.max(end, h.end);
+          if (got === need) {
+            const span = title.slice(hits[i].start, end);
+            if (titleHasAllTokens(span, tokens) && (!best || span.length < best.length)) {
+              best = span;
+            }
+            break;
+          }
+        }
+      }
+      return best;
+    }
+
+    function pickCoveringKeyword(tokens, matchLimit) {
+      const matches = findAndTitles(tokens, matchLimit || 300);
+      if (!matches.length) return null;
+      const spanFreq = new Map();
+      matches.forEach((title) => {
+        const span = shortestCoveringSpan(title, tokens) || title;
+        spanFreq.set(span, (spanFreq.get(span) || 0) + 1);
+      });
+      let bestSpan = null;
+      let bestFreq = -1;
+      spanFreq.forEach((freq, span) => {
+        if (
+          !bestSpan ||
+          freq > bestFreq ||
+          (freq === bestFreq && span.length < bestSpan.length)
+        ) {
+          bestSpan = span;
+          bestFreq = freq;
+        }
+      });
+      return {
+        keyword: bestSpan,
+        hits: matches.length,
+        matches,
+        spanFreq: bestFreq,
+      };
+    }
+
     function buildCandidates(raw) {
       const out = [];
       const add = (k) => {
@@ -386,6 +516,17 @@
         out.push(v);
       };
       add(raw);
+      const tokens = tokenize(raw);
+      if (tokens.length >= 2) {
+        const cover = pickCoveringKeyword(tokens, 300);
+        if (cover && cover.keyword) add(cover.keyword);
+        tokens.forEach((t) => {
+          add(t);
+          if (dualHanja.checked && window.HwadongHanja) {
+            HwadongHanja.expandSearchKeywords(t).forEach(add);
+          }
+        });
+      }
       if (dualHanja.checked && window.HwadongHanja) {
         HwadongHanja.expandSearchKeywords(raw).forEach(add);
       }
@@ -393,21 +534,48 @@
     }
 
     function rankCandidates(raw) {
+      const tokens = tokenize(raw);
       const cands = buildCandidates(raw);
+      const andHits = tokens.length >= 2 && useCatalog.checked && catalogReady
+        ? countAndMatches(tokens)
+        : 0;
       return cands
-        .map((keyword) => ({
-          keyword,
-          hits: useCatalog.checked && catalogReady ? countInCatalog(keyword) : 0,
-          isRaw: keyword === raw,
-        }))
+        .map((keyword) => {
+          let hits = 0;
+          if (useCatalog.checked && catalogReady) {
+            if (keyword === raw && tokens.length >= 2) hits = andHits;
+            else hits = countInCatalog(keyword);
+          }
+          return {
+            keyword,
+            hits,
+            isRaw: keyword === raw,
+            isCover: tokens.length >= 2 && keyword !== raw && titleHasAllTokens(keyword, tokens),
+          };
+        })
         .sort((a, b) => {
           if (b.hits !== a.hits) return b.hits - a.hits;
+          if (a.isCover !== b.isCover) return a.isCover ? -1 : 1;
           if (a.isRaw !== b.isRaw) return a.isRaw ? -1 : 1;
-          return b.keyword.length - a.keyword.length;
+          return a.keyword.length - b.keyword.length;
         });
     }
 
     function pickBest(raw) {
+      const tokens = tokenize(raw);
+      if (useCatalog.checked && catalogReady && tokens.length >= 2) {
+        const cover = pickCoveringKeyword(tokens, 400);
+        if (cover && cover.keyword) {
+          const ranked = rankCandidates(raw);
+          return {
+            keyword: cover.keyword,
+            hits: cover.hits,
+            ranked,
+            reason: `복수어 AND ${cover.hits.toLocaleString()}건 · "${cover.keyword}"`,
+          };
+        }
+      }
+
       const ranked = rankCandidates(raw);
       if (!ranked.length) return { keyword: raw, hits: 0, ranked, reason: "입력어" };
       const best = ranked[0];
@@ -438,11 +606,29 @@
 
     function findTitleMatches(query, limit) {
       if (!catalogReady || !query || query.length < 1) return [];
+      const tokens = tokenize(query);
+      if (tokens.length >= 2) {
+        const matches = findAndTitles(tokens, Math.max(limit * 4, 40));
+        return matches
+          .map((title) => ({
+            title,
+            span: shortestCoveringSpan(title, tokens) || title,
+          }))
+          .sort((a, b) => a.span.length - b.span.length || a.title.length - b.title.length)
+          .slice(0, limit)
+          .map((x) => x.title);
+      }
+
       const starts = [];
       const middles = [];
       for (let i = 0; i < titles.length; i++) {
         const t = titles[i];
-        const idx = t.indexOf(query);
+        const vars = tokenVariants(query);
+        let idx = -1;
+        for (let v = 0; v < vars.length; v++) {
+          const at = t.indexOf(vars[v]);
+          if (at >= 0 && (idx < 0 || at < idx)) idx = at;
+        }
         if (idx < 0) continue;
         if (idx === 0) starts.push(t);
         else middles.push(t);
@@ -452,6 +638,11 @@
     }
 
     function extractKeyFromTitle(title, query) {
+      const tokens = tokenize(query);
+      if (tokens.length >= 2) {
+        const span = shortestCoveringSpan(title, tokens);
+        if (span) return span;
+      }
       const ranked = rankCandidates(query);
       for (let i = 0; i < ranked.length; i++) {
         if (title.includes(ranked[i].keyword) && ranked[i].keyword.length >= 2) {
