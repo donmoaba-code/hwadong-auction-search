@@ -4,9 +4,9 @@
 
 ## 사용
 
-GitHub Pages 배포 후 아래 URL로 접속합니다.
+아래 URL로 접속합니다.
 
-`https://<GitHub사용자명>.github.io/hwadong-auction-search/`
+https://donmoaba-code.github.io/hwadong-auction-search/
 
 1. 검색 대상(화동옥션 / 화동양행) 선택
 2. 검색어 입력
