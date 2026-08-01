@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>화동경매 검색툴 V26.08.01</title>
+  <title>화동경매 검색툴 V26.08.02</title>
   <style>
     :root {
       --bg: #f3efe8;
@@ -28,7 +28,7 @@
       padding: 24px;
     }
     .card {
-      width: min(620px, 100%);
+      width: min(680px, 100%);
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 18px;
@@ -72,14 +72,15 @@
       cursor: pointer;
       margin: 0;
     }
+    .search-wrap { position: relative; flex: 1 1 220px; min-width: 0; }
     .row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: flex-start;
     }
     input[type="search"] {
-      flex: 1 1 200px;
-      min-width: 0;
+      width: 100%;
       border: 1px solid var(--line);
       border-radius: 12px;
       padding: 12px 14px;
@@ -90,6 +91,48 @@
     input[type="search"]:focus {
       border-color: var(--accent);
       box-shadow: 0 0 0 3px rgba(154, 52, 18, 0.12);
+    }
+    .suggest {
+      display: none;
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      z-index: 20;
+      max-height: 260px;
+      overflow: auto;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 12px 28px rgba(60, 40, 20, 0.12);
+    }
+    .suggest.open { display: block; }
+    .suggest button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      padding: 10px 12px;
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: normal;
+      line-height: 1.4;
+      border-bottom: 1px solid #f0e9e0;
+    }
+    .suggest button:last-child { border-bottom: 0; }
+    .suggest button:hover,
+    .suggest button.active {
+      background: #fff7ed;
+    }
+    .suggest .meta {
+      display: block;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 600;
     }
     button {
       border: 0;
@@ -144,12 +187,16 @@
     .chips { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip {
       display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 5px 10px;
       border-radius: 999px;
       background: #fff;
       border: 1px solid var(--line);
       font-size: 0.84rem;
+      cursor: pointer;
     }
+    .chip:hover { border-color: var(--accent); }
     .chip.primary {
       border-color: var(--accent);
       color: var(--accent);
@@ -163,12 +210,29 @@
       border-color: #1d4ed8;
       background: #eff6ff;
       color: #1e3a8a;
+      cursor: default;
+    }
+    .chip.best {
+      border-color: #047857;
+      background: #ecfdf5;
+      color: #065f46;
+      font-weight: 700;
+    }
+    .chip .n {
+      font-size: 0.75rem;
+      color: var(--muted);
+      font-weight: 700;
     }
     .hint {
       margin-top: 14px;
       color: var(--muted);
       font-size: 0.82rem;
       line-height: 1.5;
+    }
+    .status {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: var(--muted);
     }
     .actions {
       margin-top: 18px;
@@ -182,15 +246,16 @@
 </head>
 <body>
   <main class="card">
-    <h1>화동경매 검색툴 V26.08.01</h1>
+    <h1>화동경매 검색툴 V26.08.02</h1>
     <p class="desc" id="desc">
+      실제 화동 상품명 목록으로 검색어를 고른 뒤
       <a href="https://www.hwadongauction.com/search/search" target="_blank" rel="noopener">화동옥션</a>
-      또는
+      /
       <a href="https://www.hwadong.com/new/search/auctionSearch.jsp" target="_blank" rel="noopener">화동양행</a>
       원본 검색을 새 창으로 엽니다.
     </p>
 
-    <form id="searchForm">
+    <form id="searchForm" autocomplete="off">
       <div class="source-box" role="radiogroup" aria-label="검색 대상">
         <label>
           <input type="radio" name="searchSource" value="auction" checked />
@@ -204,35 +269,41 @@
 
       <label class="field-label" for="keyword">검색어 (상품명 / 상품번호 / Lot번호)</label>
       <div class="row">
-        <input
-          type="search"
-          id="keyword"
-          name="keyword"
-          placeholder="예: 제일은행, 백동화, 중국"
-          autocomplete="off"
-          autofocus
-        />
+        <div class="search-wrap">
+          <input
+            type="search"
+            id="keyword"
+            name="keyword"
+            placeholder="예: 지급어음, 1,000환, 제일은행"
+            autofocus
+          />
+          <div class="suggest" id="suggest" role="listbox" aria-label="상품명 제안"></div>
+        </div>
         <button type="submit" class="btn-search" id="btnSearch">검색 (원본 새 창)</button>
         <button type="button" class="btn-reset" id="btnReset">초기화</button>
       </div>
 
       <div class="options">
         <label class="chk">
+          <input type="checkbox" id="useCatalog" checked />
+          상품명 목록으로 최적 검색어 선택
+        </label>
+        <label class="chk">
           <input type="checkbox" id="dualHanja" checked />
-          한글 결과 없을 때 한자로 열기
+          한자·표기 변환 후보 포함
         </label>
       </div>
     </form>
 
     <div class="preview" id="preview">
-      <div class="preview-title">검색 후보</div>
-      <div class="chips" id="chips"><span class="muted">검색어를 입력하면 미리보기가 표시됩니다.</span></div>
+      <div class="preview-title">검색 후보 (목록 매칭 건수)</div>
+      <div class="chips" id="chips"><span class="muted">검색어를 입력하면 후보가 표시됩니다.</span></div>
     </div>
 
     <p class="hint" id="hint">
-      검색어를 변환·선택한 뒤 원본 사이트 창 <b>1개</b>만 엽니다.
-      인터넷 배포본은 바로 사용 가능합니다. (로컬 프록시가 있으면 한글 결과 건수를 더 정확히 판별합니다.)
+      목록에 더 많이 나오는 표기(예: <code>支給於音</code>, <code>1,000환</code>)를 골라 원본 창 <b>1개</b>만 엽니다.
     </p>
+    <p class="status" id="catalogStatus">상품명 목록 불러오는 중…</p>
 
     <div class="actions">
       <button type="button" class="btn-reset" id="btnOpenList">화동옥션 종료경매 목록</button>
@@ -245,14 +316,24 @@
     const AUCTION_LIST_URL = "https://www.hwadongauction.com/end/endAuctionList";
     const YANGHANG_SEARCH_URL = "https://www.hwadong.com/new/search/auctionSearch.jsp";
     const API_BASES = ["http://127.0.0.1:8765", ""];
-    const MAX_CONVERT = 3;
+    const MAX_CANDIDATES = 8;
+    const MAX_SUGGEST = 8;
 
     const form = document.getElementById("searchForm");
     const keywordInput = document.getElementById("keyword");
+    const useCatalog = document.getElementById("useCatalog");
     const dualHanja = document.getElementById("dualHanja");
     const chips = document.getElementById("chips");
     const hint = document.getElementById("hint");
     const btnSearch = document.getElementById("btnSearch");
+    const suggestEl = document.getElementById("suggest");
+    const catalogStatus = document.getElementById("catalogStatus");
+
+    let titles = [];
+    let catalogReady = false;
+    let suggestItems = [];
+    let suggestIndex = -1;
+    let previewTimer = null;
 
     function getSource() {
       const el = form.querySelector('input[name="searchSource"]:checked');
@@ -272,15 +353,8 @@
       return url.toString();
     }
 
-    function getHangulKeyword() {
+    function getRawKeyword() {
       return keywordInput.value.trim();
-    }
-
-    function getHanjaCandidates(raw) {
-      if (!raw || !dualHanja.checked || !window.HwadongHanja) return [];
-      return HwadongHanja.expandSearchKeywords(raw)
-        .filter((k) => k !== raw)
-        .slice(0, MAX_CONVERT);
     }
 
     function escapeHtml(s) {
@@ -295,33 +369,168 @@
       return source === "yanghang" ? "화동양행" : "화동옥션";
     }
 
-    function renderPreview() {
-      const raw = getHangulKeyword();
-      const source = getSource();
-      const converted = getHanjaCandidates(raw);
-      if (!raw) {
-        chips.innerHTML = '<span class="muted">검색어를 입력하면 미리보기가 표시됩니다.</span>';
+    function countInCatalog(keyword) {
+      if (!catalogReady || !keyword) return 0;
+      let n = 0;
+      for (let i = 0; i < titles.length; i++) {
+        if (titles[i].includes(keyword)) n++;
+      }
+      return n;
+    }
+
+    function buildCandidates(raw) {
+      const out = [];
+      const add = (k) => {
+        const v = String(k || "").trim();
+        if (!v || out.includes(v)) return;
+        out.push(v);
+      };
+      add(raw);
+      if (dualHanja.checked && window.HwadongHanja) {
+        HwadongHanja.expandSearchKeywords(raw).forEach(add);
+      }
+      return out.slice(0, 24);
+    }
+
+    function rankCandidates(raw) {
+      const cands = buildCandidates(raw);
+      return cands
+        .map((keyword) => ({
+          keyword,
+          hits: useCatalog.checked && catalogReady ? countInCatalog(keyword) : 0,
+          isRaw: keyword === raw,
+        }))
+        .sort((a, b) => {
+          if (b.hits !== a.hits) return b.hits - a.hits;
+          if (a.isRaw !== b.isRaw) return a.isRaw ? -1 : 1;
+          return b.keyword.length - a.keyword.length;
+        });
+    }
+
+    function pickBest(raw) {
+      const ranked = rankCandidates(raw);
+      if (!ranked.length) return { keyword: raw, hits: 0, ranked, reason: "입력어" };
+      const best = ranked[0];
+      if (useCatalog.checked && catalogReady && best.hits > 0) {
+        return {
+          keyword: best.keyword,
+          hits: best.hits,
+          ranked,
+          reason: `상품명 목록 ${best.hits.toLocaleString()}건 · "${best.keyword}"`,
+        };
+      }
+      const converted = ranked.find((x) => !x.isRaw);
+      if (dualHanja.checked && converted) {
+        return {
+          keyword: converted.keyword,
+          hits: converted.hits,
+          ranked,
+          reason: `변환 후보 · "${converted.keyword}"`,
+        };
+      }
+      return {
+        keyword: raw,
+        hits: best.hits,
+        ranked,
+        reason: `입력어 · "${raw}"`,
+      };
+    }
+
+    function findTitleMatches(query, limit) {
+      if (!catalogReady || !query || query.length < 1) return [];
+      const starts = [];
+      const middles = [];
+      for (let i = 0; i < titles.length; i++) {
+        const t = titles[i];
+        const idx = t.indexOf(query);
+        if (idx < 0) continue;
+        if (idx === 0) starts.push(t);
+        else middles.push(t);
+        if (starts.length >= limit) break;
+      }
+      return starts.concat(middles).slice(0, limit);
+    }
+
+    function extractKeyFromTitle(title, query) {
+      const ranked = rankCandidates(query);
+      for (let i = 0; i < ranked.length; i++) {
+        if (title.includes(ranked[i].keyword) && ranked[i].keyword.length >= 2) {
+          return ranked[i].keyword;
+        }
+      }
+      if (title.includes(query)) return query;
+      return title;
+    }
+
+    function closeSuggest() {
+      suggestEl.classList.remove("open");
+      suggestItems = [];
+      suggestIndex = -1;
+      suggestEl.innerHTML = "";
+    }
+
+    function renderSuggest(query, opts) {
+      const keepIndex = !!(opts && opts.keepIndex);
+      if (!catalogReady || !query || query.length < 1) {
+        closeSuggest();
         return;
       }
-      const parts = [
-        `<span class="chip source">${sourceLabel(source)}</span>`,
-        `<span class="chip primary">한글: ${escapeHtml(raw)}</span>`,
-      ];
-      converted.forEach((k) => {
-        parts.push(`<span class="chip converted">한자 후보: ${escapeHtml(k)}</span>`);
+      const matches = findTitleMatches(query, MAX_SUGGEST);
+      suggestItems = matches;
+      if (!matches.length) {
+        closeSuggest();
+        return;
+      }
+      if (!keepIndex || suggestIndex < 0) suggestIndex = 0;
+      if (suggestIndex >= matches.length) suggestIndex = matches.length - 1;
+      suggestEl.innerHTML = matches
+        .map((title, i) => {
+          const key = extractKeyFromTitle(title, query);
+          return `<button type="button" role="option" data-i="${i}" class="${i === suggestIndex ? "active" : ""}">${escapeHtml(title)}<span class="meta">검색어 후보: ${escapeHtml(key)}</span></button>`;
+        })
+        .join("");
+      suggestEl.classList.add("open");
+    }
+
+    function applySuggest(i) {
+      const title = suggestItems[i];
+      if (!title) return;
+      const key = extractKeyFromTitle(title, getRawKeyword() || title);
+      keywordInput.value = key;
+      closeSuggest();
+      renderPreview();
+      keywordInput.focus();
+    }
+
+    function renderPreview() {
+      const raw = getRawKeyword();
+      const source = getSource();
+      if (!raw) {
+        chips.innerHTML = '<span class="muted">검색어를 입력하면 후보가 표시됩니다.</span>';
+        return;
+      }
+      const ranked = rankCandidates(raw).slice(0, MAX_CANDIDATES);
+      const bestKey = ranked[0] && ranked[0].hits > 0 ? ranked[0].keyword : null;
+      const parts = [`<span class="chip source">${sourceLabel(source)}</span>`];
+      ranked.forEach((item) => {
+        const cls = [
+          item.keyword === bestKey ? "best" : item.isRaw ? "primary" : "converted",
+          "chip",
+        ].join(" ");
+        const label = item.isRaw ? "입력" : "후보";
+        parts.push(
+          `<button type="button" class="${cls}" data-kw="${escapeHtml(item.keyword)}">${label}: ${escapeHtml(item.keyword)}<span class="n">${item.hits.toLocaleString()}건</span></button>`
+        );
       });
       chips.innerHTML = parts.join("");
     }
 
     function updateHintDefault() {
       const source = getSource();
-      if (source === "yanghang") {
-        hint.innerHTML =
-          "화동양행(<code>auctionSearch.jsp</code>) 원본 검색을 새 창 1개로 엽니다. 한자 후보가 있으면 함께 미리보기에 표시됩니다.";
-      } else {
-        hint.innerHTML =
-          "화동옥션 원본 검색을 새 창 1개로 엽니다. 한자 후보가 있으면 함께 미리보기에 표시됩니다.";
-      }
+      hint.innerHTML =
+        source === "yanghang"
+          ? "화동양행 원본 검색을 새 창 1개로 엽니다. 목록 매칭이 많은 표기를 우선합니다."
+          : "화동옥션 원본 검색을 새 창 1개로 엽니다. 목록 매칭이 많은 표기를 우선합니다.";
     }
 
     async function resolveApiBase() {
@@ -368,53 +577,58 @@
       return fetchAuctionTotal(apiBase, keyword);
     }
 
-    async function chooseKeyword(raw, hanjaList, source) {
+    async function chooseKeyword(raw, source) {
+      const catalogPick = pickBest(raw);
+      if (useCatalog.checked && catalogReady && catalogPick.hits > 0) {
+        return { ...catalogPick, proxy: false, via: "catalog" };
+      }
+
       const apiBase = await resolveApiBase();
+      const ranked = catalogPick.ranked || rankCandidates(raw);
       if (!apiBase) {
         return {
-          keyword: hanjaList[0] || raw,
-          reason: hanjaList.length
-            ? `프록시 미연결 · ${sourceLabel(source)} 한자 후보로 1창`
-            : `프록시 미연결 · ${sourceLabel(source)} 한글 1창`,
+          keyword: catalogPick.keyword,
+          hits: catalogPick.hits,
+          ranked,
+          reason: catalogPick.reason + " · 목록/변환 기준",
           proxy: false,
+          via: "fallback",
         };
       }
 
-      const hangulTotal = await fetchTotal(apiBase, raw, source);
-      if (hangulTotal > 0) {
-        return {
-          keyword: raw,
-          reason: `${sourceLabel(source)} 한글 ${hangulTotal.toLocaleString()}건 · 1창`,
-          proxy: true,
-        };
-      }
-
-      for (const hj of hanjaList) {
-        const total = await fetchTotal(apiBase, hj, source);
+      for (const item of ranked.slice(0, 6)) {
+        const total = await fetchTotal(apiBase, item.keyword, source);
         if (total > 0) {
           return {
-            keyword: hj,
-            reason: `${sourceLabel(source)} 한글 0건 → 한자 "${hj}" ${total.toLocaleString()}건 · 1창`,
+            keyword: item.keyword,
+            hits: total,
+            ranked,
+            reason: `${sourceLabel(source)} 실시간 ${total.toLocaleString()}건 · "${item.keyword}"`,
             proxy: true,
+            via: "proxy",
           };
         }
       }
 
       return {
-        keyword: raw,
-        reason: `${sourceLabel(source)} 한글·한자 모두 0건 · 한글 페이지 1창`,
+        keyword: catalogPick.keyword || raw,
+        hits: 0,
+        ranked,
+        reason: `${sourceLabel(source)} 실시간 0건 · "${catalogPick.keyword || raw}"로 1창`,
         proxy: true,
+        via: "proxy-empty",
       };
     }
 
     async function openSearch() {
-      const raw = getHangulKeyword();
+      const raw = getRawKeyword();
       if (!raw) {
         keywordInput.focus();
         alert("검색어를 입력하세요.");
         return;
       }
 
+      closeSuggest();
       const source = getSource();
       const win = window.open("about:blank", "_blank");
       if (!win) {
@@ -423,25 +637,20 @@
       }
       try {
         win.document.write(
-          "<!doctype html><title>검색 준비</title><body style='font-family:sans-serif;padding:24px;color:#334155'>검색어 확인 중…</body>"
+          "<!doctype html><title>검색 준비</title><body style='font-family:sans-serif;padding:24px;color:#334155'>최적 검색어 확인 중…</body>"
         );
         win.document.close();
       } catch (e) {}
 
       btnSearch.disabled = true;
-      hint.textContent = `${sourceLabel(source)} · 한글 결과 유무 확인 중…`;
+      hint.textContent = `${sourceLabel(source)} · 최적 검색어 확인 중…`;
 
       try {
-        const hanjaList = getHanjaCandidates(raw);
-        const chosen = await chooseKeyword(raw, dualHanja.checked ? hanjaList : [], source);
+        const chosen = await chooseKeyword(raw, source);
         win.location.href = buildSearchUrl(chosen.keyword, source);
         hint.innerHTML = `${escapeHtml(chosen.reason)} · 열린 검색어: <code>${escapeHtml(chosen.keyword)}</code>`;
-        if (!chosen.proxy) {
-          hint.innerHTML += " · 결과 건수 판별 없이 후보 검색어로 열었습니다.";
-        }
       } catch (e) {
-        const hanjaList = getHanjaCandidates(raw);
-        const fallback = (dualHanja.checked && hanjaList[0]) || raw;
+        const fallback = pickBest(raw).keyword || raw;
         win.location.href = buildSearchUrl(fallback, source);
         hint.textContent = `확인 실패(${e.message}) · "${fallback}"로 1창 열림.`;
       } finally {
@@ -450,12 +659,55 @@
       }
     }
 
+    function schedulePreview() {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => {
+        renderPreview();
+        renderSuggest(getRawKeyword());
+      }, 80);
+    }
+
     form.addEventListener("submit", (e) => {
       e.preventDefault();
+      if (suggestEl.classList.contains("open") && suggestIndex >= 0) {
+        applySuggest(suggestIndex);
+      }
       openSearch();
     });
 
-    keywordInput.addEventListener("input", renderPreview);
+    keywordInput.addEventListener("input", schedulePreview);
+    keywordInput.addEventListener("keydown", (e) => {
+      if (!suggestEl.classList.contains("open") || !suggestItems.length) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        suggestIndex = (suggestIndex + 1) % suggestItems.length;
+        renderSuggest(getRawKeyword(), { keepIndex: true });
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        suggestIndex = (suggestIndex - 1 + suggestItems.length) % suggestItems.length;
+        renderSuggest(getRawKeyword(), { keepIndex: true });
+      } else if (e.key === "Escape") {
+        closeSuggest();
+      }
+    });
+
+    suggestEl.addEventListener("mousedown", (e) => {
+      const btn = e.target.closest("button[data-i]");
+      if (!btn) return;
+      e.preventDefault();
+      applySuggest(Number(btn.getAttribute("data-i")));
+    });
+
+    chips.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-kw]");
+      if (!btn) return;
+      keywordInput.value = btn.getAttribute("data-kw") || "";
+      renderPreview();
+      renderSuggest(getRawKeyword());
+      keywordInput.focus();
+    });
+
+    useCatalog.addEventListener("change", renderPreview);
     dualHanja.addEventListener("change", renderPreview);
     form.querySelectorAll('input[name="searchSource"]').forEach((el) => {
       el.addEventListener("change", () => {
@@ -466,9 +718,11 @@
 
     document.getElementById("btnReset").addEventListener("click", () => {
       keywordInput.value = "";
+      useCatalog.checked = true;
       dualHanja.checked = true;
       const auctionRadio = form.querySelector('input[name="searchSource"][value="auction"]');
       if (auctionRadio) auctionRadio.checked = true;
+      closeSuggest();
       updateHintDefault();
       renderPreview();
       keywordInput.focus();
@@ -481,8 +735,31 @@
       window.open(YANGHANG_SEARCH_URL, "_blank", "noopener,noreferrer");
     });
 
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".search-wrap")) closeSuggest();
+    });
+
+    async function loadCatalog() {
+      try {
+        const res = await fetch("titles.json", { cache: "force-cache" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        titles = Array.isArray(data) ? data : [];
+        catalogReady = titles.length > 0;
+        catalogStatus.textContent = catalogReady
+          ? `상품명 목록 ${titles.length.toLocaleString()}건 준비됨`
+          : "상품명 목록이 비어 있습니다. 변환 후보만 사용합니다.";
+      } catch (e) {
+        catalogReady = false;
+        titles = [];
+        catalogStatus.textContent = "상품명 목록 로드 실패 · 한자 변환 후보만 사용합니다.";
+      }
+      renderPreview();
+    }
+
     updateHintDefault();
     renderPreview();
+    loadCatalog();
   </script>
 </body>
 </html>

@@ -351,13 +351,14 @@
     return String(text).replace(/\d{1,3}(?:,\d{3})+/g, (m) => m.replace(/,/g, ""));
   }
 
-  /** 숫자+원/환 → 쉼표 없는 數字+圓/圜 */
-  function convertNumberCurrency(text) {
+  /** 숫자+원/환 → 數字+圓/圜 (쉼표 유지/제거 모두 생성에 사용) */
+  function convertNumberCurrency(text, keepComma) {
+    const norm = (n) => (keepComma ? String(n) : stripThousandCommas(n));
     let next = String(text);
-    next = next.replace(/(\d[\d,]*)\s*원/g, (_, n) => stripThousandCommas(n) + "圓");
-    next = next.replace(/(\d[\d,]*)\s*환/g, (_, n) => stripThousandCommas(n) + "圜");
-    next = next.replace(/(\d[\d,]*)\s*圓/g, (_, n) => stripThousandCommas(n) + "圓");
-    next = next.replace(/(\d[\d,]*)\s*圜/g, (_, n) => stripThousandCommas(n) + "圜");
+    next = next.replace(/(\d[\d,]*)\s*원/g, (_, n) => norm(n) + "圓");
+    next = next.replace(/(\d[\d,]*)\s*환/g, (_, n) => norm(n) + "圜");
+    next = next.replace(/(\d[\d,]*)\s*圓/g, (_, n) => norm(n) + "圓");
+    next = next.replace(/(\d[\d,]*)\s*圜/g, (_, n) => norm(n) + "圜");
     return { text: next, changed: next !== text };
   }
 
@@ -382,12 +383,13 @@
     addUnique(out, raw);
 
     const noComma = stripThousandCommas(raw);
-
-    // 금액형은 쉼표 없는 한자 표기를 최우선 후보로
-    const preferredCurrency = convertNumberCurrency(noComma);
-    if (preferredCurrency.changed) addUnique(out, preferredCurrency.text);
-
     if (noComma !== raw) addUnique(out, noComma);
+
+    // 실제 상품명은 쉼표 유지(1,000환)가 많음 → 유지 변환을 먼저
+    const keep = convertNumberCurrency(raw, true);
+    if (keep.changed) addUnique(out, keep.text);
+    const stripped = convertNumberCurrency(noComma, false);
+    if (stripped.changed) addUnique(out, stripped.text);
 
     const seeds = [raw];
     if (noComma !== raw) seeds.push(noComma);
@@ -396,26 +398,28 @@
       if (HAS_HANGUL.test(seed)) {
         const a = replaceByDict(seed, HANGUL_TO_HANJA);
         if (a.changed) {
-          addUnique(out, stripThousandCommas(a.text));
           addUnique(out, a.text);
+          addUnique(out, stripThousandCommas(a.text));
         }
 
-        const b = convertNumberCurrency(seed);
+        const bKeep = convertNumberCurrency(seed, true);
+        if (bKeep.changed) addUnique(out, bKeep.text);
+        const b = convertNumberCurrency(seed, false);
         if (b.changed) addUnique(out, b.text);
 
-        const c = convertNumberCurrency(a.text);
+        const cKeep = convertNumberCurrency(a.text, true);
+        if (cKeep.changed) addUnique(out, cKeep.text);
+        const c = convertNumberCurrency(a.text, false);
         if (c.changed) addUnique(out, c.text);
 
         Object.keys(HANGUL_MULTI).forEach((ko) => {
           if (!seed.includes(ko)) return;
-          // 한 글자 동의어는 검색어 전체가 그 글자일 때만 적용
           if (ko.length === 1 && seed !== ko) return;
-          // 원문 전체가 사전 단어면 해당 단어 멀티만 적용 (부분 치환 노이즈 방지)
           if (HANGUL_TO_HANJA[seed] && ko !== seed) return;
           HANGUL_MULTI[ko].forEach((hj) => {
             const joined = seed.split(ko).join(hj);
-            addUnique(out, stripThousandCommas(joined));
             addUnique(out, joined);
+            addUnique(out, stripThousandCommas(joined));
           });
         });
       }
@@ -430,7 +434,9 @@
         const c = convertNumberCurrencyReverse(a.text);
         if (c.changed) addUnique(out, c.text);
 
-        const d = convertNumberCurrency(seed);
+        const dKeep = convertNumberCurrency(seed, true);
+        if (dKeep.changed) addUnique(out, dKeep.text);
+        const d = convertNumberCurrency(seed, false);
         if (d.changed) addUnique(out, d.text);
       }
     });
